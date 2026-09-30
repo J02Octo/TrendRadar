@@ -195,6 +195,16 @@ jobs:
             echo "ℹ️ 未配置 Cloudflare Secrets，跳过 Cloudflare Pages 部署"
           fi
 
+      - name: Generate RSS feed for Flare
+        if: success()
+        run: |
+          python scripts/generate_rss.py
+          if [ ! -f feed.xml ]; then
+            echo "❌ feed.xml 生成失败"
+            exit 1
+          fi
+          echo "✅ feed.xml 生成成功"
+          
       - name: Prepare Cloudflare Pages assets
         if: success() && steps.cf_check.outputs.enabled == 'true'
         run: |
@@ -205,6 +215,7 @@ jobs:
           rm -rf cloudflare_dist
           mkdir -p cloudflare_dist
           cp index.html cloudflare_dist/index.html
+          cp feed.xml cloudflare_dist/feed.xml
 
       - name: Deploy to Cloudflare Pages
         if: success() && steps.cf_check.outputs.enabled == 'true'
