@@ -141,6 +141,16 @@ rss:
       name: "雅虎财经"
       url: "https://finance.yahoo.com/news/rssindex"
 
+    - id: "cctv-xwlb"
+      name: "央视新闻"
+      url: "https://rsshub.app/cctv/xwlb"
+      max_age_days: 2
+
+    - id: "sspai"
+      name: "少数派"
+      url: "https://sspai.com/feed"
+      max_age_days: 3
+
     # 自定义源示例
     # - id: "custom-feed"
     #   name: "自定义源"
