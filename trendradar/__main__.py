@@ -16,7 +16,7 @@ from trendradar.context import AppContext
 from trendradar import __version__
 from trendradar.core import load_config
 from trendradar.core.analyzer import convert_keyword_stats_to_platform_stats
-from trendradar.crawler import DataFetcher
+from trendradar.crawler import DataFetcher, CustomSourceFetcher
 from trendradar.storage import convert_crawl_results_to_news_data
 from trendradar.utils.time import DEFAULT_TIMEZONE, is_within_days, calculate_days_old
 from trendradar.ai import AIAnalyzer, AIAnalysisResult
@@ -447,7 +447,20 @@ class NewsAnalyzer:
         """统一的数据加载和预处理，使用当前监控平台列表过滤历史数据"""
         try:
             # 获取当前配置的监控平台ID列表
-            current_platform_ids = self.ctx.platform_ids
+            current_platform_ids = list(self.ctx.platform_ids)
+
+            # 加入自定义网页源 ID，确保 daily/current 历史分析也能读取“阅读”数据
+            custom_config = self.ctx.config.get("CUSTOM_SOURCES", {})
+            if custom_config.get("ENABLED"):
+                custom_ids = [
+                    source.get("id")
+                    for source in custom_config.get("SOURCES", [])
+                    if source.get("id")
+                ]
+                current_platform_ids = list(
+                    dict.fromkeys(current_platform_ids + custom_ids)
+                )
+
             if not quiet:
                 print(f"当前监控平台: {current_platform_ids}")
 
@@ -966,6 +979,43 @@ class NewsAnalyzer:
         results, id_to_name, failed_ids = self.data_fetcher.crawl_websites(
             ids, self.request_interval, domain_rules=domain_rules
         )
+
+        # ==================================================
+        # 自定义网页源
+        # ==================================================
+        custom_config = self.ctx.config.get("CUSTOM_SOURCES", {})
+
+        if custom_config.get("ENABLED"):
+            custom_sources = custom_config.get("SOURCES", [])
+
+            if custom_sources:
+                print(f"开始抓取自定义网页源，共 {len(custom_sources)} 个")
+
+                custom_fetcher = CustomSourceFetcher(
+                    proxy_url=self.proxy_url,
+                    timeout=custom_config.get("TIMEOUT", 15),
+                    max_items_per_source=custom_config.get(
+                        "MAX_ITEMS_PER_SOURCE", 20
+                    ),
+                )
+
+                custom_results, custom_names, custom_failed = (
+                    custom_fetcher.crawl_sources(custom_sources)
+                )
+
+                # 合并进普通新闻数据，后续继续走原有存储、筛选、HTML、AI 流程
+                results.update(custom_results)
+                id_to_name.update(custom_names)
+                failed_ids.extend(custom_failed)
+
+                print(
+                    f"自定义网页源成功: {list(custom_results.keys())}"
+                )
+
+                if custom_failed:
+                    print(
+                        f"自定义网页源失败: {custom_failed}"
+                    )
 
         # 转换为 NewsData 格式并保存到存储后端
         crawl_time = self.ctx.format_time()
