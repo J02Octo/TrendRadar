@@ -129,16 +129,6 @@ custom_sources:
   max_items_per_source: 20
 
   sources:
-    - id: "lifeweek-reading"
-      name: "三联生活周刊"
-      url: "https://www.lifeweek.com.cn/"
-      expected_domain: "lifeweek.com.cn"
-
-    - id: "owspace"
-      name: "单读"
-      url: "https://www.owspace.com/read.html"
-      expected_domain: "owspace.com"
-
     - id: "aeon"
       name: "Aeon"
       url: "https://aeon.co/essays"
@@ -156,8 +146,28 @@ custom_sources:
 
     - id: "farnam-street"
       name: "Farnam Street"
-      url: "https://fs.blog/"
+      url: "https://fs.blog/blog/"
       expected_domain: "fs.blog"
+
+    - id: "quanta"
+      name: "Quanta Magazine"
+      url: "https://www.quantamagazine.org/archive/"
+      expected_domain: "quantamagazine.org"
+
+    - id: "nautilus"
+      name: "Nautilus"
+      url: "https://nautil.us/all"
+      expected_domain: "nautil.us"
+
+    - id: "psyche"
+      name: "Psyche"
+      url: "https://psyche.co/ideas"
+      expected_domain: "psyche.co"
+
+    - id: "longreads"
+      name: "Longreads"
+      url: "https://longreads.com/picks/"
+      expected_domain: "longreads.com"
 
 
 # ===============================================================
