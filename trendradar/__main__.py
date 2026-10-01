@@ -774,6 +774,8 @@ class NewsAnalyzer:
                     custom_items.append(item)
 
             if custom_items:
+                custom_items = custom_items[:20]
+                
                 standalone_data["platforms"].append(
                     {
                         "id": "reading-thought",
