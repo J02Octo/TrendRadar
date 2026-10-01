@@ -129,10 +129,10 @@ custom_sources:
   max_items_per_source: 20
 
   sources:
-    - id: "aeon"
-      name: "Aeon"
-      url: "https://aeon.co/essays"
-      expected_domain: "aeon.co"
+    - id: "jstor-daily"
+      name: "JSTOR Daily"
+      url: "https://daily.jstor.org/"
+      expected_domain: "daily.jstor.org"
 
     - id: "works-in-progress"
       name: "Works in Progress"
@@ -149,20 +149,20 @@ custom_sources:
       url: "https://fs.blog/blog/"
       expected_domain: "fs.blog"
 
-    - id: "quanta"
-      name: "Quanta Magazine"
-      url: "https://www.quantamagazine.org/archive/"
-      expected_domain: "quantamagazine.org"
+    - id: "smithsonian"
+      name: "Smithsonian Magazine"
+      url: "https://www.smithsonianmag.com/"
+      expected_domain: "smithsonianmag.com"
 
     - id: "nautilus"
       name: "Nautilus"
       url: "https://nautil.us/all"
       expected_domain: "nautil.us"
 
-    - id: "psyche"
-      name: "Psyche"
-      url: "https://psyche.co/ideas"
-      expected_domain: "psyche.co"
+    - id: "greater-good"
+      name: "Greater Good"
+      url: "https://greatergood.berkeley.edu/article"
+      expected_domain: "greatergood.berkeley.edu"
 
     - id: "longreads"
       name: "Longreads"
