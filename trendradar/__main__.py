@@ -520,22 +520,14 @@ class NewsAnalyzer:
         rss_items: Optional[List[Dict]] = None,
     ) -> Optional[Dict]:
         """
-        从原始数据中提取独立展示区数据
+        从原始数据中提取独立展示区数据。
 
-        纯数据准备方法，不检查 display.regions.standalone 开关。
-        各消费者自行决定是否使用：
-        - AI 分析：由 ai.include_standalone 控制（在 _run_ai_analysis 层门控）
-        - HTML 报告 / 邮件：由 display.regions.standalone 控制（在 HTML 生成前过滤）
-        - Webhook 推送：由 display.regions.standalone 控制（在 dispatcher 层门控）
+        除原有知乎/微博/抖音等 standalone.platforms 外，
+        还会自动把 CUSTOM_SOURCES 中启用的全部网页源聚合成
+        一个“阅读与思想”虚拟平台，放到独立展示区的 Tab 栏中。
 
-        Args:
-            results: 原始爬取结果 {platform_id: {title: title_data}}
-            id_to_name: 平台 ID 到名称的映射
-            title_info: 标题元信息（含排名历史、时间等）
-            rss_items: RSS 条目列表
-
-        Returns:
-            独立展示数据字典，如果未配置数据源返回 None
+        CUSTOM_SOURCES 自身仍保留原有关键词组用于来源白名单控制，
+        这里只改变展示位置，不改变抓取与存储逻辑。
         """
         display_config = self.ctx.config.get("DISPLAY", {})
         standalone_config = display_config.get("STANDALONE", {})
@@ -544,7 +536,36 @@ class NewsAnalyzer:
         rss_feed_ids = standalone_config.get("RSS_FEEDS", [])
         max_items = standalone_config.get("MAX_ITEMS", 20)
 
-        if not platform_ids and not rss_feed_ids:
+        # ------------------------------------------------------
+        # 自定义网页源聚合组
+        # ------------------------------------------------------
+        custom_config = self.ctx.config.get("CUSTOM_SOURCES", {})
+        custom_enabled = bool(custom_config.get("ENABLED", False))
+        custom_group_name = str(
+            custom_config.get("GROUP", "阅读与思想")
+        ).strip() or "阅读与思想"
+
+        custom_sources = [
+            source
+            for source in custom_config.get("SOURCES", [])
+            if source.get("enabled", True) and source.get("id")
+        ]
+
+        custom_source_ids = [
+            source.get("id")
+            for source in custom_sources
+            if source.get("id")
+        ]
+
+        # 自定义源本身已经由 max_items_per_source 控制每站抓取量，
+        # 因此聚合 Tab 默认不再额外裁剪，尽可能展示全部已抓取文章。
+        has_custom_group = custom_enabled and bool(custom_source_ids)
+
+        if (
+            not platform_ids
+            and not rss_feed_ids
+            and not has_custom_group
+        ):
             return None
 
         standalone_data = {
@@ -562,102 +583,264 @@ class NewsAnalyzer:
                         if latest_time is None or last_time > latest_time:
                             latest_time = last_time
 
-        # 提取热榜平台数据
-        for platform_id in platform_ids:
-            if platform_id not in results:
-                continue
+        # ------------------------------------------------------
+        # 通用方法：构造一个来源的独立展示 items
+        # ------------------------------------------------------
+        def build_source_items(
+            source_id: str,
+            source_name: str,
+            prefix_source_name: bool = False,
+        ) -> List[Dict]:
+            if source_id not in results:
+                return []
 
-            platform_name = id_to_name.get(platform_id, platform_id)
-            platform_titles = results[platform_id]
-
+            source_titles = results[source_id]
             items = []
-            for title, title_data in platform_titles.items():
-                # 获取元信息（如果有 title_info）
-                meta = {}
-                if title_info and platform_id in title_info and title in title_info[platform_id]:
-                    meta = title_info[platform_id][title]
 
-                # 只保留当前在榜的话题（last_time 等于最新时间）
+            for title, title_data in source_titles.items():
+                meta = {}
+
+                if (
+                    title_info
+                    and source_id in title_info
+                    and title in title_info[source_id]
+                ):
+                    meta = title_info[source_id][title]
+
+                # current 模式下只保留最新批次仍在榜/仍存在的内容
                 if latest_time and meta:
                     if meta.get("last_time") != latest_time:
                         continue
 
-                # 使用当前热榜的排名数据（title_data）进行排序
-                # title_data 包含的是爬虫返回的当前排名，用于保证独立展示区的顺序与热榜一致
                 current_ranks = title_data.get("ranks", [])
-                current_rank = current_ranks[-1] if current_ranks else 0
+                current_rank = (
+                    current_ranks[-1]
+                    if current_ranks
+                    else 0
+                )
 
-                # 用于显示的排名范围：合并历史排名和当前排名
-                historical_ranks = meta.get("ranks", []) if meta else []
-                # 合并去重，保持顺序
+                historical_ranks = (
+                    meta.get("ranks", [])
+                    if meta
+                    else []
+                )
+
                 all_ranks = historical_ranks.copy()
+
                 for rank in current_ranks:
                     if rank not in all_ranks:
                         all_ranks.append(rank)
-                display_ranks = all_ranks if all_ranks else current_ranks
 
-                item = {
-                    "title": title,
-                    "url": title_data.get("url", ""),
-                    "mobileUrl": title_data.get("mobileUrl", ""),
-                    "rank": current_rank,  # 用于排序的当前排名
-                    "ranks": display_ranks,  # 用于显示的排名范围（历史+当前）
-                    "first_time": meta.get("first_time", ""),
-                    "last_time": meta.get("last_time", ""),
-                    "count": meta.get("count", 1),
-                    "rank_timeline": meta.get("rank_timeline", []),
-                }
-                items.append(item)
+                display_ranks = (
+                    all_ranks
+                    if all_ranks
+                    else current_ranks
+                )
 
-            # 按当前排名排序
-            items.sort(key=lambda x: x["rank"] if x["rank"] > 0 else 9999)
+                display_title = title
+                if prefix_source_name:
+                    display_title = (
+                        f"[{source_name}] {title}"
+                    )
 
-            # 限制条数
+                items.append(
+                    {
+                        "title": display_title,
+                        "url": title_data.get("url", ""),
+                        "mobileUrl": title_data.get("mobileUrl", ""),
+                        "rank": current_rank,
+                        "ranks": display_ranks,
+                        "first_time": meta.get("first_time", ""),
+                        "last_time": meta.get("last_time", ""),
+                        "count": meta.get("count", 1),
+                        "rank_timeline": meta.get("rank_timeline", []),
+                        "source_id": source_id,
+                        "source_name": source_name,
+                    }
+                )
+
+            items.sort(
+                key=lambda x: (
+                    x["rank"]
+                    if x["rank"] > 0
+                    else 9999
+                )
+            )
+
+            return items
+
+        # ------------------------------------------------------
+        # 原有独立展示平台：知乎 / 微博 / 抖音 ...
+        # ------------------------------------------------------
+        for platform_id in platform_ids:
+            platform_name = id_to_name.get(
+                platform_id,
+                platform_id,
+            )
+
+            items = build_source_items(
+                platform_id,
+                platform_name,
+                prefix_source_name=False,
+            )
+
             if max_items > 0:
                 items = items[:max_items]
 
             if items:
-                standalone_data["platforms"].append({
-                    "id": platform_id,
-                    "name": platform_name,
-                    "items": items,
-                })
+                standalone_data["platforms"].append(
+                    {
+                        "id": platform_id,
+                        "name": platform_name,
+                        "items": items,
+                    }
+                )
 
-        # 提取 RSS 数据
+        # ------------------------------------------------------
+        # 聚合全部自定义阅读源为一个“阅读与思想”虚拟平台
+        # ------------------------------------------------------
+        if has_custom_group:
+            custom_items = []
+            seen_urls = set()
+            seen_titles = set()
+
+            # 按每个来源内部排名轮转合并：
+            # 先取各站第 1 条，再取各站第 2 条……
+            # 避免某一个网站的 20 条全部排在最前面。
+            per_source_items = []
+
+            for source_order, source in enumerate(custom_sources):
+                source_id = source.get("id")
+                source_name = source.get(
+                    "name",
+                    id_to_name.get(
+                        source_id,
+                        source_id,
+                    ),
+                )
+
+                source_items = build_source_items(
+                    source_id,
+                    source_name,
+                    prefix_source_name=True,
+                )
+
+                if source_items:
+                    per_source_items.append(
+                        {
+                            "source_order": source_order,
+                            "items": source_items,
+                        }
+                    )
+
+            max_depth = max(
+                (
+                    len(group["items"])
+                    for group in per_source_items
+                ),
+                default=0,
+            )
+
+            for item_index in range(max_depth):
+                for group in per_source_items:
+                    items = group["items"]
+
+                    if item_index >= len(items):
+                        continue
+
+                    item = items[item_index]
+
+                    url = item.get("url", "")
+                    title = item.get("title", "")
+                    title_key = title.lower().strip()
+
+                    if url and url in seen_urls:
+                        continue
+
+                    if title_key and title_key in seen_titles:
+                        continue
+
+                    if url:
+                        seen_urls.add(url)
+
+                    if title_key:
+                        seen_titles.add(title_key)
+
+                    # 聚合后的虚拟排名按最终展示顺序重新编号
+                    item = dict(item)
+                    item["rank"] = len(custom_items) + 1
+                    item["ranks"] = [item["rank"]]
+
+                    custom_items.append(item)
+
+            if custom_items:
+                standalone_data["platforms"].append(
+                    {
+                        "id": "reading-thought",
+                        "name": custom_group_name,
+                        "items": custom_items,
+                    }
+                )
+
+                print(
+                    "[独立展示区] 已聚合自定义网页源到 "
+                    f"'{custom_group_name}'，共 {len(custom_items)} 条"
+                )
+
+        # ------------------------------------------------------
+        # RSS 独立展示
+        # ------------------------------------------------------
         if rss_items and rss_feed_ids:
-            # 按 feed_id 分组
             feed_items_map = {}
+
             for item in rss_items:
                 feed_id = item.get("feed_id", "")
+
                 if feed_id in rss_feed_ids:
                     if feed_id not in feed_items_map:
                         feed_items_map[feed_id] = {
-                            "name": item.get("feed_name", feed_id),
+                            "name": item.get(
+                                "feed_name",
+                                feed_id,
+                            ),
                             "items": [],
                         }
-                    feed_items_map[feed_id]["items"].append({
-                        "title": item.get("title", ""),
-                        "url": item.get("url", ""),
-                        "published_at": item.get("published_at", ""),
-                        "author": item.get("author", ""),
-                    })
 
-            # 限制条数并添加到结果
+                    feed_items_map[feed_id]["items"].append(
+                        {
+                            "title": item.get("title", ""),
+                            "url": item.get("url", ""),
+                            "published_at": item.get(
+                                "published_at",
+                                "",
+                            ),
+                            "author": item.get("author", ""),
+                        }
+                    )
+
             for feed_id in rss_feed_ids:
-                if feed_id in feed_items_map:
-                    feed_data = feed_items_map[feed_id]
-                    items = feed_data["items"]
-                    if max_items > 0:
-                        items = items[:max_items]
-                    if items:
-                        standalone_data["rss_feeds"].append({
+                if feed_id not in feed_items_map:
+                    continue
+
+                feed_data = feed_items_map[feed_id]
+                items = feed_data["items"]
+
+                if max_items > 0:
+                    items = items[:max_items]
+
+                if items:
+                    standalone_data["rss_feeds"].append(
+                        {
                             "id": feed_id,
                             "name": feed_data["name"],
                             "items": items,
-                        })
+                        }
+                    )
 
-        # 如果没有任何数据，返回 None
-        if not standalone_data["platforms"] and not standalone_data["rss_feeds"]:
+        if (
+            not standalone_data["platforms"]
+            and not standalone_data["rss_feeds"]
+        ):
             return None
 
         return standalone_data
@@ -717,6 +900,37 @@ class NewsAnalyzer:
                 id_to_name, title_info, new_titles,
                 mode=mode, global_filters=global_filters, quiet=quiet,
             )
+
+        # ------------------------------------------------------
+        # “阅读与思想”改为独立展示区后，不再出现在上方热榜大类 Tab。
+        # 保留 frequency_words 中该组，仅用于自定义源白名单/内部匹配。
+        # ------------------------------------------------------
+        custom_config = self.ctx.config.get("CUSTOM_SOURCES", {})
+        custom_group_name = str(
+            custom_config.get("GROUP", "")
+        ).strip()
+
+        if (
+            custom_config.get("ENABLED", False)
+            and custom_group_name
+            and stats
+        ):
+            before_count = len(stats)
+
+            stats = [
+                stat
+                for stat in stats
+                if str(
+                    stat.get("word", "")
+                ).strip() != custom_group_name
+            ]
+
+            if len(stats) != before_count:
+                print(
+                    "[展示] 已将 "
+                    f"'{custom_group_name}' "
+                    "从热榜大类移到独立展示区"
+                )
 
         self._hotlist_total_count = total_titles
 
