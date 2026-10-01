@@ -324,6 +324,20 @@ display:
   # 推送展示由 regions.standalone 控制，AI 分析由 ai_analysis.include_standalone 控制
   standalone:
     platforms: ["zhihu", "weibo", "douyin"]     # 热榜平台 ID 列表（如 ["zhihu", "weibo"]）
+    custom_groups:
+      - id: "reading-thought"
+        name: "阅读与思想"
+        sources:
+          - "jstor-daily"
+          - "works-in-progress"
+          - "noema"
+          - "farnam-street"
+          - "smithsonian"
+          - "nautilus"
+          - "greater-good"
+          - "longreads"
+        max_items: 20
+        
     rss_feeds: []                                # RSS 源 ID 列表（如 ["hacker-news"]）
     max_items: 20                                # 每个源最多展示条数（0=不限制）
 
