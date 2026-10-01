@@ -437,7 +437,7 @@ ai_analysis:
   include_rss: false                # 是否包含 RSS 内容进行分析（true=包含, false=不包含）
   include_standalone: false          # 是否纳入独立展示区数据（true=纳入, false=不纳入）
 
-  include_rank_timeline: true       # 排名时间线详细程度
+  include_rank_timeline: false       # 排名时间线详细程度
                                     # true = 完整轨迹（如 1(09:30)→2(10:00)），AI 分析更准但多耗 0.5~1 倍 token
                                     # false = 简化格式（排名范围+出现次数），更省 token
 
