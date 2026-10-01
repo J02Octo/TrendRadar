@@ -13,7 +13,8 @@ TrendRadar 自定义网页数据源
 2. 尽量只保留真正的文章正文页；
 3. 排除栏目页、作者页、订阅页、隐私页等导航内容；
 4. 支持一个来源配置多个候选列表页；
-5. 抓取结果继续兼容 TrendRadar 原有 NewsNow 数据结构。
+5. 抓取结果继续兼容 TrendRadar 原有 NewsNow 数据结构；
+6. 当前统一维护 8 个“阅读与思想”网页来源，不使用 RSS/API/浏览器渲染。
 """
 
 import re
@@ -148,100 +149,15 @@ class AnchorParser(HTMLParser):
 SOURCE_RULES = {
 
     # ==========================================================
-    # 三联生活周刊
-    #
-    # 当前正文格式：
-    # https://www.lifeweek.com.cn/article/273664
-    #
-    # 首页部分内容可能由前端动态加载，
-    # 因此增加 articleList / column 作为 fallback。
-    # ==========================================================
-    "lifeweek-reading": {
-
-        "list_urls": [
-            "https://www.lifeweek.com.cn/",
-            (
-                "https://www.lifeweek.com.cn/"
-                "articleList?tag=三联生活周刊"
-            ),
-            "https://www.lifeweek.com.cn/column",
-        ],
-
-        "include_paths": [
-            r"^/article/\d+/?$",
-        ],
-
-        "exclude_paths": [
-            r"^/articleList",
-            r"^/column",
-            r"^/magazine",
-            r"^/news",
-            r"^/search",
-            r"^/user",
-        ],
-
-        "exclude_titles": [
-            r"^首页$",
-            r"登录",
-            r"注册",
-            r"订阅",
-            r"查看更多",
-            r"查看本期",
-            r"购买纸刊",
-            r"购买数字刊",
-            r"三联生活周刊app",
-            r"用户协议",
-            r"隐私政策",
-            r"商务合作",
-            r"关于我们",
-            r"加入我们",
-            r"投稿",
-        ],
-    },
-
-    # ==========================================================
-    # 单读 / 单向空间
-    # ==========================================================
-    "owspace": {
-
-        "list_urls": [
-            "https://www.owspace.com/read.html",
-        ],
-
-        "include_paths": [
-            r"/index\.php",
-            r"\.html$",
-        ],
-
-        "exclude_paths": [
-            r"/about",
-            r"/activity",
-            r"/shop",
-            r"/login",
-            r"/register",
-        ],
-
-        "exclude_titles": [
-            r"^首页$",
-            r"活动",
-            r"商店",
-            r"关于",
-            r"登录",
-            r"注册",
-            r"更多",
-            r"联系我们",
-            r"隐私",
-        ],
-    },
-
-    # ==========================================================
     # Aeon
+    #
+    # 列表页：
+    # https://aeon.co/essays
     #
     # 正文：
     # /essays/article-slug
     # ==========================================================
     "aeon": {
-
         "list_urls": [
             "https://aeon.co/essays",
         ],
@@ -255,6 +171,8 @@ SOURCE_RULES = {
             r"^/videos",
             r"^/about",
             r"^/contact",
+            r"^/privacy",
+            r"^/terms",
         ],
 
         "exclude_titles": [
@@ -266,6 +184,7 @@ SOURCE_RULES = {
             r"contact",
             r"popular",
             r"latest",
+            r"view all",
         ],
     },
 
@@ -277,11 +196,8 @@ SOURCE_RULES = {
     #
     # Issue 汇总页：
     # /issue-25/
-    #
-    # 二者必须区分。
     # ==========================================================
     "works-in-progress": {
-
         "list_urls": [
             "https://worksinprogress.co/",
         ],
@@ -313,18 +229,12 @@ SOURCE_RULES = {
     # ==========================================================
     # Noema
     #
-    # 正文：
-    # /how-ai-will-change-us/
+    # 正文通常为：
+    # /article-slug/
     #
-    # 同时网站还有：
-    # /author/...
-    # /article-type/...
-    # /article-topic/...
-    #
-    # 必须过滤。
+    # 需要排除 author / topic / type 等栏目页。
     # ==========================================================
     "noema": {
-
         "list_urls": [
             "https://www.noemamag.com/",
             "https://www.noemamag.com/articles-search/",
@@ -381,14 +291,13 @@ SOURCE_RULES = {
     # ==========================================================
     # Farnam Street
     #
-    # 首页更多是品牌导航；
-    # /blog/ 才是文章索引。
+    # 列表页：
+    # /blog/
     #
-    # 文章正文通常为：
+    # 正文通常为：
     # /article-slug/
     # ==========================================================
     "farnam-street": {
-
         "list_urls": [
             "https://fs.blog/blog/",
             "https://fs.blog/",
@@ -436,6 +345,185 @@ SOURCE_RULES = {
             r"decision making$",
             r"reading better",
             r"self improvement",
+        ],
+    },
+
+    # ==========================================================
+    # Quanta Magazine
+    #
+    # 列表页：
+    # https://www.quantamagazine.org/archive/
+    #
+    # 正文常见格式：
+    # /2026/article-slug/
+    # ==========================================================
+    "quanta": {
+        "list_urls": [
+            "https://www.quantamagazine.org/archive/",
+            "https://www.quantamagazine.org/",
+        ],
+
+        "include_paths": [
+            r"^/\d{4}/[a-z0-9][a-z0-9\-]+/?$",
+        ],
+
+        "exclude_paths": [
+            r"^/archive/?$",
+            r"^/about",
+            r"^/contact",
+            r"^/tag/",
+            r"^/topic/",
+            r"^/author/",
+            r"^/newsletter",
+            r"^/podcast",
+            r"^/video",
+        ],
+
+        "exclude_titles": [
+            r"subscribe",
+            r"newsletter",
+            r"podcast",
+            r"about",
+            r"archive",
+            r"most read",
+            r"contact",
+            r"privacy",
+            r"terms",
+            r"support quanta",
+        ],
+    },
+
+    # ==========================================================
+    # Nautilus
+    #
+    # 列表页：
+    # https://nautil.us/all
+    #
+    # Nautilus 正文 URL 常见为：
+    # /article-title-123456/
+    # 即 slug 末尾带数字文章 ID。
+    # ==========================================================
+    "nautilus": {
+        "list_urls": [
+            "https://nautil.us/all",
+            "https://nautil.us/",
+        ],
+
+        "include_paths": [
+            r"^/[a-z0-9][a-z0-9\-]*-\d+/?$",
+        ],
+
+        "exclude_paths": [
+            r"^/$",
+            r"^/all/?$",
+            r"^/category/",
+            r"^/author/",
+            r"^/tag/",
+            r"^/about",
+            r"^/contact",
+            r"^/membership",
+            r"^/newsletter",
+            r"^/podcast",
+        ],
+
+        "exclude_titles": [
+            r"subscribe",
+            r"newsletter",
+            r"membership",
+            r"about",
+            r"contact",
+            r"privacy",
+            r"terms",
+            r"podcast",
+            r"view all",
+            r"more stories",
+        ],
+    },
+
+    # ==========================================================
+    # Psyche
+    #
+    # 列表页：
+    # https://psyche.co/ideas
+    #
+    # 正文：
+    # /ideas/article-slug
+    # ==========================================================
+    "psyche": {
+        "list_urls": [
+            "https://psyche.co/ideas",
+        ],
+
+        "include_paths": [
+            r"^/ideas/[^/]+/?$",
+        ],
+
+        "exclude_paths": [
+            r"^/ideas/?$",
+            r"^/guides",
+            r"^/videos",
+            r"^/about",
+            r"^/contact",
+            r"^/privacy",
+            r"^/terms",
+        ],
+
+        "exclude_titles": [
+            r"newsletter",
+            r"subscribe",
+            r"about",
+            r"privacy",
+            r"terms",
+            r"contact",
+            r"popular",
+            r"latest",
+            r"view all",
+        ],
+    },
+
+    # ==========================================================
+    # Longreads
+    #
+    # 列表页：
+    # https://longreads.com/picks/
+    #
+    # WordPress 正文常见格式：
+    # /YYYY/MM/DD/article-slug/
+    # ==========================================================
+    "longreads": {
+        "list_urls": [
+            "https://longreads.com/picks/",
+            "https://longreads.com/",
+        ],
+
+        "include_paths": [
+            r"^/\d{4}/\d{2}/\d{2}/[^/]+/?$",
+        ],
+
+        "exclude_paths": [
+            r"^/picks/?$",
+            r"^/category/",
+            r"^/tag/",
+            r"^/author/",
+            r"^/about",
+            r"^/contact",
+            r"^/membership",
+            r"^/newsletter",
+            r"^/support",
+        ],
+
+        "exclude_titles": [
+            r"newsletter",
+            r"subscribe",
+            r"about",
+            r"support",
+            r"membership",
+            r"contact",
+            r"privacy",
+            r"terms",
+            r"more features",
+            r"weekly top 5",
+            r"editors.? picks",
         ],
     },
 }
@@ -622,7 +710,10 @@ class CustomSourceFetcher:
                 r"\s*[-|–—]\s*"
                 r"(NOEMA|Noema Magazine|"
                 r"Farnam Street|"
-                r"三联生活网)"
+                r"Quanta Magazine|"
+                r"Nautilus|"
+                r"Psyche|"
+                r"Longreads)"
                 r"\s*$"
             ),
             "",
