@@ -4,5 +4,9 @@
 """
 
 from trendradar.crawler.fetcher import DataFetcher
+from trendradar.crawler.custom_sources import CustomSourceFetcher
 
-__all__ = ["DataFetcher"]
+__all__ = [
+    "DataFetcher",
+    "CustomSourceFetcher",
+]
