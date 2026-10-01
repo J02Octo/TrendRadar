@@ -573,6 +573,44 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     platforms_config = config_data.get("platforms", {})
     config["PLATFORMS"] = [p for p in platforms_config.get("sources", []) if p.get("enabled", True)]
 
+    # 自定义网页源配置
+    custom_sources_config = config_data.get(
+        "custom_sources",
+        {},
+    )
+
+    config["CUSTOM_SOURCES"] = {
+        "ENABLED": custom_sources_config.get(
+            "enabled",
+            False,
+        ),
+        "GROUP": custom_sources_config.get(
+            "group",
+            "阅读",
+        ),
+        "MATCH_ALL": custom_sources_config.get(
+            "match_all",
+            True,
+        ),
+        "TIMEOUT": custom_sources_config.get(
+            "timeout",
+            15,
+        ),
+        "MAX_ITEMS_PER_SOURCE": custom_sources_config.get(
+            "max_items_per_source",
+            20,
+        ),
+        "SOURCES": [
+            source
+            for source in custom_sources_config.get(
+                "sources",
+                [],
+            )
+            if source.get("enabled", True)
+        ],
+    }
+
+    
     # RSS 配置
     config["RSS"] = _load_rss_config(config_data)
 
