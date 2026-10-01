@@ -4,22 +4,14 @@ TrendRadar 自定义网页数据源
 
 用途：
 - 直接抓取指定网页中的文章标题和链接
-- 不使用 RSS
+- 不使用 RSS / API / 浏览器渲染
 - 返回与 NewsNow 平台相同的 results 数据结构
-- 当前主要用于“阅读与思想”分类
-
-设计原则：
-1. 每个网站使用独立的文章 URL 规则；
-2. 尽量只保留真正的文章正文页；
-3. 排除栏目页、作者页、订阅页、隐私页等导航内容；
-4. 支持一个来源配置多个候选列表页；
-5. 抓取结果继续兼容 TrendRadar 原有 NewsNow 数据结构；
-6. 当前统一维护 8 个“阅读与思想”网页来源，不使用 RSS/API/浏览器渲染。
+- 当前用于“阅读与思想”分类
 """
 
 import re
-from html.parser import HTMLParser
 from html import unescape
+from html.parser import HTMLParser
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse
 
@@ -44,78 +36,60 @@ DEFAULT_HEADERS = {
 
 
 class AnchorParser(HTMLParser):
-    """
-    提取网页中的链接。
-
-    相比原版本增加：
-    - a 标签内部 img 的 alt/title；
-    - 嵌套标签文本；
-    - 更适合卡片式新闻网站。
-    """
+    """提取 <a> 中的 href 与可见标题。"""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
-
         self.links: List[Dict] = []
-
-        self._current_href: Optional[str] = None
-        self._current_title: Optional[str] = None
-        self._current_text: List[str] = []
-        self._anchor_depth = 0
+        self._href: Optional[str] = None
+        self._title: Optional[str] = None
+        self._texts: List[str] = []
 
     def handle_starttag(self, tag, attrs):
         tag = tag.lower()
-        attr_dict = dict(attrs)
+        attrs = dict(attrs)
 
         if tag == "a":
-            href = attr_dict.get("href")
-
+            href = attrs.get("href")
             if not href:
                 return
 
-            self._current_href = href
-            self._current_title = (
-                attr_dict.get("title")
-                or attr_dict.get("aria-label")
+            self._href = href
+            self._title = (
+                attrs.get("title")
+                or attrs.get("aria-label")
             )
-            self._current_text = []
-            self._anchor_depth = 1
-
+            self._texts = []
             return
 
-        if self._current_href is not None:
-            self._anchor_depth += 1
+        if self._href is not None and tag == "img":
+            alt = (
+                attrs.get("alt")
+                or attrs.get("title")
+            )
 
-            # 很多文章列表的 a 标签本身没有文字，
-            # 标题可能只存在图片 alt / title 中。
-            if tag == "img":
-                image_text = (
-                    attr_dict.get("alt")
-                    or attr_dict.get("title")
-                )
-
-                if image_text:
-                    self._current_text.append(
-                        image_text
-                    )
+            if alt:
+                self._texts.append(alt)
 
     def handle_data(self, data):
-        if self._current_href is not None:
-            text = data.strip()
+        if self._href is None:
+            return
 
-            if text:
-                self._current_text.append(text)
+        text = data.strip()
+
+        if text:
+            self._texts.append(text)
 
     def handle_endtag(self, tag):
-        if self._current_href is None:
+        if (
+            tag.lower() != "a"
+            or self._href is None
+        ):
             return
 
-        self._anchor_depth -= 1
-
-        if tag.lower() != "a":
-            return
-
-        text = " ".join(self._current_text)
+        text = " ".join(
+            self._texts
+        )
 
         text = re.sub(
             r"\s+",
@@ -124,22 +98,21 @@ class AnchorParser(HTMLParser):
         ).strip()
 
         title = (
-            self._current_title
+            self._title
             or text
-        )
+        ).strip()
 
         if title:
             self.links.append(
                 {
-                    "href": self._current_href,
-                    "title": title.strip(),
+                    "href": self._href,
+                    "title": title,
                 }
             )
 
-        self._current_href = None
-        self._current_title = None
-        self._current_text = []
-        self._anchor_depth = 0
+        self._href = None
+        self._title = None
+        self._texts = []
 
 
 # ==============================================================
@@ -149,53 +122,59 @@ class AnchorParser(HTMLParser):
 SOURCE_RULES = {
 
     # ==========================================================
-    # Aeon
+    # 1. JSTOR Daily
     #
-    # 列表页：
-    # https://aeon.co/essays
+    # 方向：
+    # 历史 / 社会 / 人文 / 科学 / 文化
     #
-    # 正文：
-    # /essays/article-slug
+    # 正文一般是：
+    # /article-slug/
     # ==========================================================
-    "aeon": {
+    "jstor-daily": {
         "list_urls": [
-            "https://aeon.co/essays",
+            "https://daily.jstor.org/",
+            "https://daily.jstor.org/category/stories/",
         ],
 
         "include_paths": [
-            r"^/essays/[^/]+/?$",
+            r"^/[a-z0-9][a-z0-9\-]+/?$",
         ],
 
         "exclude_paths": [
-            r"^/essays/?$",
-            r"^/videos",
+            r"^/$",
             r"^/about",
             r"^/contact",
+            r"^/category/",
+            r"^/tag/",
+            r"^/author/",
+            r"^/newsletter",
             r"^/privacy",
             r"^/terms",
+            r"^/search",
         ],
 
         "exclude_titles": [
             r"newsletter",
             r"subscribe",
             r"about",
+            r"contact",
             r"privacy",
             r"terms",
-            r"contact",
+            r"search",
+            r"support",
+            r"donate",
             r"popular",
-            r"latest",
-            r"view all",
+            r"trending",
+            r"most recent",
+            r"long reads",
         ],
     },
 
     # ==========================================================
-    # Works in Progress
+    # 2. Works in Progress
     #
-    # 正文：
-    # /issue/article-slug/
-    #
-    # Issue 汇总页：
-    # /issue-25/
+    # 方向：
+    # 科技 / 社会 / 经济 / 制度
     # ==========================================================
     "works-in-progress": {
         "list_urls": [
@@ -227,12 +206,10 @@ SOURCE_RULES = {
     },
 
     # ==========================================================
-    # Noema
+    # 3. Noema
     #
-    # 正文通常为：
-    # /article-slug/
-    #
-    # 需要排除 author / topic / type 等栏目页。
+    # 方向：
+    # 社会 / 科技 / 未来 / 思想
     # ==========================================================
     "noema": {
         "list_urls": [
@@ -289,13 +266,12 @@ SOURCE_RULES = {
     },
 
     # ==========================================================
-    # Farnam Street
+    # 4. Farnam Street
     #
-    # 列表页：
-    # /blog/
+    # 方向：
+    # 思维 / 决策 / 认知 / 学习
     #
-    # 正文通常为：
-    # /article-slug/
+    # 增加 Sponsor / 广告过滤
     # ==========================================================
     "farnam-street": {
         "list_urls": [
@@ -325,9 +301,14 @@ SOURCE_RULES = {
             r"^/reading-list",
             r"^/mental-models/?$",
             r"^/decision-making/?$",
+            r"^/sponsor",
+            r"^/advertis",
         ],
 
         "exclude_titles": [
+            r"^sponsor$",
+            r"sponsored",
+            r"advertis",
             r"newsletter",
             r"about",
             r"membership",
@@ -349,59 +330,69 @@ SOURCE_RULES = {
     },
 
     # ==========================================================
-    # Quanta Magazine
+    # 5. Smithsonian Magazine
     #
-    # 列表页：
-    # https://www.quantamagazine.org/archive/
+    # 方向：
+    # 历史 / 科学 / 文化 / 社会
     #
-    # 正文常见格式：
-    # /2026/article-slug/
+    # 正文通常位于：
+    # /history/...
+    # /science-nature/...
+    # /arts-culture/...
+    # /smart-news/...
     # ==========================================================
-    "quanta": {
+    "smithsonian": {
         "list_urls": [
-            "https://www.quantamagazine.org/archive/",
-            "https://www.quantamagazine.org/",
+            "https://www.smithsonianmag.com/",
+            "https://www.smithsonianmag.com/history/",
+            "https://www.smithsonianmag.com/science-nature/",
+            "https://www.smithsonianmag.com/arts-culture/",
         ],
 
         "include_paths": [
-            r"^/\d{4}/[a-z0-9][a-z0-9\-]+/?$",
+            (
+                r"^/"
+                r"(history|science-nature|arts-culture|"
+                r"smart-news|innovation|travel)"
+                r"/[^/]+/?$"
+            ),
         ],
 
         "exclude_paths": [
-            r"^/archive/?$",
             r"^/about",
             r"^/contact",
-            r"^/tag/",
-            r"^/topic/",
+            r"^/subscribe",
+            r"^/privacy",
+            r"^/terms",
+            r"^/search",
             r"^/author/",
-            r"^/newsletter",
-            r"^/podcast",
-            r"^/video",
+            r"^/tag/",
         ],
 
         "exclude_titles": [
             r"subscribe",
             r"newsletter",
-            r"podcast",
             r"about",
-            r"archive",
-            r"most read",
             r"contact",
             r"privacy",
             r"terms",
-            r"support quanta",
+            r"search",
+            r"shop",
+            r"magazine",
+            r"latest",
+            r"most popular",
+            r"see all",
         ],
     },
 
     # ==========================================================
-    # Nautilus
+    # 6. Nautilus
     #
-    # 列表页：
-    # https://nautil.us/all
+    # 方向：
+    # 科学 / 哲学 / 心理 / 社会
     #
-    # Nautilus 正文 URL 常见为：
+    # 正文 URL 通常：
     # /article-title-123456/
-    # 即 slug 末尾带数字文章 ID。
     # ==========================================================
     "nautilus": {
         "list_urls": [
@@ -441,29 +432,33 @@ SOURCE_RULES = {
     },
 
     # ==========================================================
-    # Psyche
+    # 7. Greater Good
     #
-    # 列表页：
-    # https://psyche.co/ideas
+    # UC Berkeley Greater Good Science Center
+    #
+    # 方向：
+    # 心理 / 自我 / 社会观察 / 人际关系
     #
     # 正文：
-    # /ideas/article-slug
+    # /article/item/article-slug
     # ==========================================================
-    "psyche": {
+    "greater-good": {
         "list_urls": [
-            "https://psyche.co/ideas",
+            "https://greatergood.berkeley.edu/article",
+            "https://greatergood.berkeley.edu/",
         ],
 
         "include_paths": [
-            r"^/ideas/[^/]+/?$",
+            r"^/article/item/[^/]+/?$",
         ],
 
         "exclude_paths": [
-            r"^/ideas/?$",
-            r"^/guides",
-            r"^/videos",
+            r"^/article/?$",
             r"^/about",
             r"^/contact",
+            r"^/events",
+            r"^/profile/",
+            r"^/topic/",
             r"^/privacy",
             r"^/terms",
         ],
@@ -472,22 +467,24 @@ SOURCE_RULES = {
             r"newsletter",
             r"subscribe",
             r"about",
+            r"contact",
             r"privacy",
             r"terms",
-            r"contact",
-            r"popular",
-            r"latest",
-            r"view all",
+            r"events",
+            r"podcast",
+            r"courses",
+            r"see all",
+            r"more",
         ],
     },
 
     # ==========================================================
-    # Longreads
+    # 8. Longreads
     #
-    # 列表页：
-    # https://longreads.com/picks/
+    # 方向：
+    # 长篇报道 / 随笔 / 深度文章
     #
-    # WordPress 正文常见格式：
+    # 正文：
     # /YYYY/MM/DD/article-slug/
     # ==========================================================
     "longreads": {
@@ -566,15 +563,6 @@ class CustomSourceFetcher:
         url: str,
         expected_domain: str,
     ) -> bool:
-        """
-        验证链接是否属于允许域名。
-
-        支持：
-        example.com
-        www.example.com
-        sub.example.com
-        """
-
         try:
             parsed = urlparse(url)
 
@@ -609,19 +597,13 @@ class CustomSourceFetcher:
     def _normalize_url(
         url: str,
     ) -> str:
-        """
-        规范化文章 URL：
-
-        - 去掉 fragment；
-        - 保留 query；
-        - 避免同一文章因为 #xxx 重复。
-        """
-
         try:
             parsed = urlparse(url)
 
-            normalized = parsed._replace(
-                fragment="",
+            normalized = (
+                parsed._replace(
+                    fragment="",
+                )
             )
 
             return urlunparse(
@@ -690,10 +672,6 @@ class CustomSourceFetcher:
     def _clean_title(
         title: str,
     ) -> str:
-        """
-        清理标题中的多余空格、HTML 字符等。
-        """
-
         title = unescape(
             str(title)
         )
@@ -704,15 +682,16 @@ class CustomSourceFetcher:
             title,
         ).strip()
 
-        # 去掉部分网站常见的尾部站名
+        # 去除部分站点常见的尾部网站名
         title = re.sub(
             (
                 r"\s*[-|–—]\s*"
                 r"(NOEMA|Noema Magazine|"
                 r"Farnam Street|"
-                r"Quanta Magazine|"
+                r"JSTOR Daily|"
+                r"Smithsonian Magazine|"
                 r"Nautilus|"
-                r"Psyche|"
+                r"Greater Good|"
                 r"Longreads)"
                 r"\s*$"
             ),
@@ -727,22 +706,18 @@ class CustomSourceFetcher:
     def _title_looks_valid(
         title: str,
     ) -> bool:
-        """
-        基础标题质量检查。
-        """
-
         if not title:
             return False
 
-        # 太短通常是菜单
+        # 太短通常是导航菜单
         if len(title) < 6:
             return False
 
-        # 太长通常是整段摘要被抓成 title
+        # 太长通常抓到了整段摘要
         if len(title) > 180:
             return False
 
-        # 纯数字 / 标点
+        # 必须至少包含字母或中文
         if not re.search(
             r"[A-Za-z\u4e00-\u9fff]",
             title,
@@ -752,7 +727,7 @@ class CustomSourceFetcher:
         return True
 
     # ==========================================================
-    # 获取列表页
+    # 获取网页
     # ==========================================================
 
     def _fetch_page(
@@ -762,13 +737,6 @@ class CustomSourceFetcher:
         Optional[str],
         Optional[str],
     ]:
-        """
-        下载单个列表页。
-
-        Returns:
-            html, error
-        """
-
         try:
             response = requests.get(
                 url,
@@ -786,13 +754,19 @@ class CustomSourceFetcher:
                     or "utf-8"
                 )
 
-            return response.text, None
+            return (
+                response.text,
+                None,
+            )
 
         except Exception as e:
-            return None, str(e)
+            return (
+                None,
+                str(e),
+            )
 
     # ==========================================================
-    # 获取单个来源
+    # 抓取单个来源
     # ==========================================================
 
     def fetch_source(
@@ -802,12 +776,6 @@ class CustomSourceFetcher:
         Optional[Dict],
         Optional[str],
     ]:
-        """
-        抓取单个网页源。
-
-        Returns:
-            (结果, 错误)
-        """
 
         source_id = (
             source.get(
@@ -886,8 +854,8 @@ class CustomSourceFetcher:
         # ======================================================
         # 列表页
         #
-        # config.yaml 中 URL 始终优先；
-        # SOURCE_RULES 可追加 fallback。
+        # config.yaml 中配置的 URL 优先；
+        # SOURCE_RULES 可以追加 fallback。
         # ======================================================
 
         configured_list_urls = (
@@ -935,7 +903,10 @@ class CustomSourceFetcher:
 
         for list_url in list_urls:
 
-            if len(result) >= max_items:
+            if (
+                len(result)
+                >= max_items
+            ):
                 break
 
             html, error = (
@@ -969,7 +940,10 @@ class CustomSourceFetcher:
 
             for item in parser.links:
 
-                if len(result) >= max_items:
+                if (
+                    len(result)
+                    >= max_items
+                ):
                     break
 
                 raw_href = (
@@ -980,10 +954,12 @@ class CustomSourceFetcher:
                     .strip()
                 )
 
-                title = self._clean_title(
-                    item.get(
-                        "title",
-                        "",
+                title = (
+                    self._clean_title(
+                        item.get(
+                            "title",
+                            "",
+                        )
                     )
                 )
 
@@ -1162,7 +1138,10 @@ class CustomSourceFetcher:
             )
         )
 
-        return result, None
+        return (
+            result,
+            None,
+        )
 
     # ==========================================================
     # 批量抓取
@@ -1176,14 +1155,6 @@ class CustomSourceFetcher:
         Dict,
         List,
     ]:
-        """
-        批量抓取自定义网页源。
-
-        Returns:
-            results,
-            id_to_name,
-            failed_ids
-        """
 
         results = {}
         id_to_name = {}
