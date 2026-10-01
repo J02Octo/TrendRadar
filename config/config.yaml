@@ -249,7 +249,7 @@ display:
                                       # 注：热点词汇统计中的新增标记🆕不受此配置影响
 
     rss: false                         # RSS 订阅区域（true=显示并分析, false=隐藏并跳过分析）
-    standalone: false                 # 独立展示区：完整热榜/RSS，不受关键词过滤（true=显示, false=隐藏）
+    standalone: true                 # 独立展示区：完整热榜/RSS，不受关键词过滤（true=显示, false=隐藏）
     ai_analysis: true                 # AI 分析区域（true=显示, false=隐藏）
 
   # 独立展示区：将指定平台/RSS 完整展示，不受关键词过滤
@@ -435,7 +435,7 @@ ai_analysis:
                                     # 热榜优先占用配额，RSS 用剩余配额，独立展示区不受此限制
 
   include_rss: false                # 是否包含 RSS 内容进行分析（true=包含, false=不包含）
-  include_standalone: true          # 是否纳入独立展示区数据（true=纳入, false=不纳入）
+  include_standalone: false          # 是否纳入独立展示区数据（true=纳入, false=不纳入）
 
   include_rank_timeline: true       # 排名时间线详细程度
                                     # true = 完整轨迹（如 1(09:30)→2(10:00)），AI 分析更准但多耗 0.5~1 倍 token
@@ -450,7 +450,7 @@ ai_analysis:
 # 对推送标题进行翻译，不包含 AI 分析的内容
 # ===============================================================
 ai_translation:
-  enabled: true                     # 是否启用翻译功能（true=启用, false=关闭）
+  enabled: false                     # 是否启用翻译功能（true=启用, false=关闭）
   language: "中文"                   # 翻译目标语言（如 "English", "Korean", "法语"）
   prompt_file: "ai_translation_prompt.txt"   # 提示词文件（相对于 config 目录）
 
