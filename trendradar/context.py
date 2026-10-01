@@ -237,8 +237,110 @@ class AppContext:
     def load_frequency_words(
         self, frequency_file: Optional[str] = None
     ) -> Tuple[List[Dict], List[str], List[str]]:
-        """加载频率词配置"""
-        return load_frequency_words(frequency_file)
+        """
+        加载频率词配置，并为自定义网页源注入来源限制。
+
+        custom_sources 启用后：
+        - 仅允许指定来源进入目标词组；
+        - match_all=true 时，指定来源无需再次命中该词组关键词；
+        - 普通平台即使命中目标词组关键词，也不会进入该词组。
+
+        兼容配置：
+        - 优先精确匹配 display_name / group_key；
+        - 如果未精确匹配且配置为“阅读”，会在唯一候选存在时兼容匹配
+          类似“阅读与思想”的词组。
+        """
+        word_groups, filter_words, global_filters = load_frequency_words(
+            frequency_file
+        )
+
+        custom_config = self.config.get("CUSTOM_SOURCES", {})
+
+        if not custom_config.get("ENABLED", False):
+            return word_groups, filter_words, global_filters
+
+        target_group_name = str(
+            custom_config.get("GROUP", "阅读")
+        ).strip()
+
+        source_ids = [
+            source.get("id")
+            for source in custom_config.get("SOURCES", [])
+            if source.get("id")
+        ]
+
+        if not source_ids:
+            return word_groups, filter_words, global_filters
+
+        # 先做精确匹配，避免误绑定其他词组
+        matched_groups = []
+
+        for group in word_groups:
+            display_name = str(
+                group.get("display_name", "")
+            ).strip()
+
+            group_key = str(
+                group.get("group_key", "")
+            ).strip()
+
+            if (
+                display_name == target_group_name
+                or group_key == target_group_name
+            ):
+                matched_groups.append(group)
+
+        # 兼容旧配置：
+        # 如果 config.yaml 仍写 group: "阅读"，
+        # 而 frequency_words.txt 中实际名称是 [阅读与思想]，
+        # 且只存在一个包含“阅读”的候选组，则自动绑定该组
+        if not matched_groups and target_group_name:
+            fuzzy_candidates = []
+
+            for group in word_groups:
+                display_name = str(
+                    group.get("display_name", "")
+                ).strip()
+
+                group_key = str(
+                    group.get("group_key", "")
+                ).strip()
+
+                if (
+                    target_group_name in display_name
+                    or target_group_name in group_key
+                ):
+                    fuzzy_candidates.append(group)
+
+            if len(fuzzy_candidates) == 1:
+                matched_groups = fuzzy_candidates
+
+        # 注入来源白名单
+        for group in matched_groups:
+            group["allowed_sources"] = list(source_ids)
+            group["match_all_for_sources"] = bool(
+                custom_config.get("MATCH_ALL", True)
+            )
+
+        if not matched_groups:
+            print(
+                "[自定义源] 警告：未找到目标词组 "
+                f"'{target_group_name}'，来源白名单未注入。"
+            )
+        else:
+            matched_names = [
+                group.get("display_name")
+                or group.get("group_key")
+                or target_group_name
+                for group in matched_groups
+            ]
+
+            print(
+                "[自定义源] 已绑定来源白名单到词组: "
+                f"{matched_names}，来源数: {len(source_ids)}"
+            )
+
+        return word_groups, filter_words, global_filters
 
     def matches_word_groups(
         self,
@@ -335,7 +437,14 @@ class AppContext:
             output_dir="output",
             date_folder=self.format_date(),
             time_filename=self.format_time(),
-            render_html_func=lambda *args, **kwargs: self.render_html(*args, rss_items=rss_items, rss_new_items=rss_new_items, ai_analysis=ai_analysis, standalone_data=standalone_data, **kwargs),
+            render_html_func=lambda *args, **kwargs: self.render_html(
+                *args,
+                rss_items=rss_items,
+                rss_new_items=rss_new_items,
+                ai_analysis=ai_analysis,
+                standalone_data=standalone_data,
+                **kwargs,
+            ),
             report_metadata=report_metadata,
             translate_report_func=translate_report_func,
         )
@@ -506,14 +615,23 @@ class AppContext:
             get_time_func=self.get_time,
         )
 
-    def run_ai_filter(self, interests_file: Optional[str] = None) -> Optional[AIFilterResult]:
+    def run_ai_filter(
+        self,
+        interests_file: Optional[str] = None,
+    ) -> Optional[AIFilterResult]:
         """执行 AI 智能筛选完整流程"""
         if not self.ai_filter_enabled:
             return None
+
         try:
-            return self._get_ai_filter_pipeline().run(interests_file)
+            return self._get_ai_filter_pipeline().run(
+                interests_file
+            )
         except _TagExtractionError:
-            return AIFilterResult(success=False, error="标签提取失败")
+            return AIFilterResult(
+                success=False,
+                error="标签提取失败",
+            )
 
     def convert_ai_filter_to_report_data(
         self,
@@ -524,7 +642,10 @@ class AppContext:
     ) -> tuple:
         """将 AI 筛选结果转换为与关键词匹配相同的数据结构"""
         return self._get_ai_filter_pipeline().convert_to_report_data(
-            ai_filter_result, mode, new_titles, rss_new_urls,
+            ai_filter_result,
+            mode,
+            new_titles,
+            rss_new_urls,
         )
 
     # === 资源清理 ===
